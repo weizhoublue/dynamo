@@ -239,7 +239,9 @@ class SGLangProcess(ManagedEngineProcessMixin):
 @pytest.mark.pre_merge
 @pytest.mark.gpu_1
 @pytest.mark.parametrize("request_plane", ["tcp"], indirect=True)
-@pytest.mark.timeout(150)  # ~3x average (~46s/test), rounded up
+# 150s left no headroom — recent CI runs landed at 152.50s and tripped pytest-timeout
+# during teardown of FrontendRouterProcess. 240s gives ~60% buffer over the 152s tail.
+@pytest.mark.timeout(240)  # ~3x average (~46s/test), rounded up; bumped from 150
 def test_sglang_kv_router_basic(
     request,
     runtime_services_dynamic_ports,

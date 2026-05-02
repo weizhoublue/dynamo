@@ -403,13 +403,14 @@ trtllm_configs = {
             # profiled peak so the scheduler's VRAM budget is accurate.
             pytest.mark.profiled_vram_gib(17.1),  # actual nvidia-smi peak 17.1 GiB
             pytest.mark.requested_trtllm_vram_gib(17.1),
-            pytest.mark.timeout(
-                600
-            ),  # Video generation is slow even at small resolution
+            # 600s pytest-timeout (URL check 300s + payload generation 300s) was the
+            # exact budget — Wan2.1 cold-load on L4 occasionally spilled past 300s and
+            # tripped the URL check. 900s with URL=480s leaves ~420s for generation.
+            pytest.mark.timeout(900),  # bumped from 600
         ],
         model="Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
         frontend_port=DefaultPort.FRONTEND.value,
-        timeout=300,
+        timeout=480,  # URL check; bumped from 300 — L4 cold-load tail past 300s
         delayed_start=5,
         request_payloads=[
             VideoGenerationPayload(
@@ -464,13 +465,13 @@ trtllm_configs = {
                 20.0
             ),  # actual nvidia-smi peak 20.0 GiB [gluo FIXME] reprofil as new model is used
             pytest.mark.requested_trtllm_vram_gib(20.0),
-            pytest.mark.timeout(
-                600
-            ),  # Image generation is slow even at small resolution
+            # See video_diffusion above for the same rationale: 600s/URL=300s left no
+            # headroom for FLUX cold-load on L4. 900s/URL=480s gives ~420s for generation.
+            pytest.mark.timeout(900),  # bumped from 600
         ],
         model="black-forest-labs/FLUX.2-klein-4B",
         frontend_port=DefaultPort.FRONTEND.value,
-        timeout=300,
+        timeout=480,  # URL check; bumped from 300 — L4 cold-load tail past 300s
         delayed_start=5,
         request_payloads=[
             ImageGenerationPayload(
