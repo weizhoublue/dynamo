@@ -32,10 +32,10 @@ const (
 // loader continues running alongside regular containers.
 func EnsureGMSRestoreSidecars(
 	podSpec *corev1.PodSpec,
-	mainContainer *corev1.Container,
+	targetContainers []*corev1.Container,
 	storage snapshotprotocol.Storage,
 ) {
-	if podSpec == nil || mainContainer == nil {
+	if podSpec == nil || len(targetContainers) == 0 {
 		return
 	}
 
@@ -47,14 +47,28 @@ func EnsureGMSRestoreSidecars(
 		}
 	}
 	podSpec.InitContainers = initContainers
-	gms.EnsureSharedVolume(podSpec, mainContainer)
+	sidecarImage := ""
+	hasTargetContainer := false
+	for _, targetContainer := range targetContainers {
+		if targetContainer == nil {
+			continue
+		}
+		hasTargetContainer = true
+		if sidecarImage == "" && targetContainer.Image != "" {
+			sidecarImage = targetContainer.Image
+		}
+		gms.EnsureSharedVolume(podSpec, targetContainer)
+	}
+	if !hasTargetContainer {
+		return
+	}
 
 	snapshotprotocol.InjectCheckpointVolume(podSpec, storage.PVCName)
 
-	server := gms.Container(gms.ServerContainerName, gms.ServerModule, mainContainer.Image)
+	server := gms.Container(gms.ServerContainerName, gms.ServerModule, sidecarImage)
 	server.RestartPolicy = ptr.To(corev1.ContainerRestartPolicyAlways)
 
-	loader := gms.Container(GMSLoaderContainer, gmsCheckpointLoaderModule, mainContainer.Image)
+	loader := gms.Container(GMSLoaderContainer, gmsCheckpointLoaderModule, sidecarImage)
 	loader.VolumeMounts = append(loader.VolumeMounts, corev1.VolumeMount{Name: snapshotprotocol.CheckpointVolumeName, MountPath: storage.BasePath})
 	loader.Env = append(loader.Env, corev1.EnvVar{Name: envCheckpointDir, Value: resolveGMSArtifactDir(storage)})
 	loader.RestartPolicy = ptr.To(corev1.ContainerRestartPolicyAlways)

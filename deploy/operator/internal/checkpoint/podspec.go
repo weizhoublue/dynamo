@@ -98,16 +98,16 @@ func InjectCheckpointIntoPodSpec(
 	if len(targets) == 0 {
 		targets = []string{commonconsts.MainContainerName}
 	}
-	podInfoContainers := make([]*corev1.Container, 0, len(targets))
+	targetContainers := make([]*corev1.Container, 0, len(targets))
 	for _, name := range targets {
 		for i := range podSpec.Containers {
 			if podSpec.Containers[i].Name == name {
-				podInfoContainers = append(podInfoContainers, &podSpec.Containers[i])
+				targetContainers = append(targetContainers, &podSpec.Containers[i])
 				break
 			}
 		}
 	}
-	if len(podInfoContainers) != len(targets) {
+	if len(targetContainers) != len(targets) {
 		return fmt.Errorf("checkpoint restore targets %v do not all exist in pod spec", targets)
 	}
 	syntheticAnnotations := map[string]string{
@@ -128,15 +128,10 @@ func InjectCheckpointIntoPodSpec(
 	}
 
 	EnsurePodInfoVolume(podSpec)
-	for _, c := range podInfoContainers {
+	for _, c := range targetContainers {
 		EnsurePodInfoMount(c)
 	}
 	if info.Ready && info.GPUMemoryService != nil && info.GPUMemoryService.Enabled {
-		// GMS restore is still single-main-container only.
-		mainContainer, err := RequireMainContainer(podSpec)
-		if err != nil {
-			return fmt.Errorf("gpuMemoryService enabled: %w", err)
-		}
 		storage, err := snapshotprotocol.DiscoverAndResolveStorage(
 			ctx,
 			reader,
@@ -147,7 +142,7 @@ func InjectCheckpointIntoPodSpec(
 		if err != nil {
 			return err
 		}
-		EnsureGMSRestoreSidecars(podSpec, mainContainer, storage)
+		EnsureGMSRestoreSidecars(podSpec, targetContainers, storage)
 	}
 
 	return nil
