@@ -300,6 +300,8 @@ RUN --mount=type=cache,target=/home/dynamo/.cache/uv,uid=1000,gid=0,mode=0775,sh
       /opt/dynamo/wheelhouse/nixl/nixl*.whl && \
     if [ "${CUDA_VERSION%%.*}" = "13" ]; then \
         uv pip uninstall -y nixl-cu12 || true; \
+        uv pip uninstall -y cupy-cuda12x || true; \
+        uv pip install cupy-cuda13x; \
     fi && \
     if [ "${ENABLE_KVBM}" = "true" ]; then \
         KVBM_WHEEL=$(ls /opt/dynamo/wheelhouse/kvbm*.whl 2>/dev/null | head -1); \
