@@ -9,6 +9,7 @@ and feature gap details.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -28,15 +29,19 @@ from dynamo.common.backend.engine import (
 from dynamo.common.backend.worker import WorkerConfig
 from dynamo.llm import ModelInput
 from dynamo.vllm.args import parse_args
+from dynamo.vllm.constants import DisaggregationMode
 
 from .handlers import build_sampling_params
 
 logger = logging.getLogger(__name__)
 
+_DRAIN_TIMEOUT_S = 30.0
+
 
 class VllmLLMEngine(LLMEngine):
-    def __init__(self, engine_args):
+    def __init__(self, engine_args, disaggregation_mode=None):
         self.engine_args = engine_args
+        self._disaggregation_mode = disaggregation_mode
         self.engine_client = None
         self._vllm_config = None
         self._default_sampling_params = None
@@ -54,7 +59,7 @@ class VllmLLMEngine(LLMEngine):
                 config.engine_args.served_model_name
             ) = config.model
 
-        engine = cls(config.engine_args)
+        engine = cls(config.engine_args, config.disaggregation_mode)
         worker_config = WorkerConfig.from_runtime_config(
             config,
             model_name=config.model,
@@ -163,6 +168,36 @@ class VllmLLMEngine(LLMEngine):
         if self.engine_client is not None and request_id is not None:
             await self.engine_client.abort(request_id)
             logger.debug("Aborted request %s", request_id)
+
+    async def drain(self) -> None:
+        if (
+            self.engine_client is None
+            or self._disaggregation_mode != DisaggregationMode.PREFILL
+        ):
+            return
+
+        pause_generation = getattr(self.engine_client, "pause_generation", None)
+        if pause_generation is None:
+            logger.warning(
+                "vLLM engine does not expose pause_generation; skipping drain"
+            )
+            return
+
+        logger.info(
+            "Draining vLLM prefill requests before shutdown (timeout=%.1fs)",
+            _DRAIN_TIMEOUT_S,
+        )
+        try:
+            await asyncio.wait_for(
+                pause_generation(mode="wait", clear_cache=False),
+                timeout=_DRAIN_TIMEOUT_S,
+            )
+            logger.info("vLLM prefill requests drained")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "vLLM drain timeout (%.1fs) reached; proceeding with shutdown",
+                _DRAIN_TIMEOUT_S,
+            )
 
     async def cleanup(self) -> None:
         try:
