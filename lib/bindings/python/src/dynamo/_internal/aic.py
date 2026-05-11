@@ -16,6 +16,24 @@ DEFAULT_BACKEND_VERSIONS = {
 DEFAULT_STATIC_STRIDE = 32
 
 
+def _format_aic_context(
+    backend_name: str,
+    system: str,
+    version: str,
+    model_path: str,
+    tp_size: int,
+    moe_tp_size: int | None,
+    moe_ep_size: int | None,
+    attention_dp_size: int | None,
+) -> str:
+    return (
+        f"system={system!r}, backend={backend_name!r}, version={version!r}, "
+        f"model_path={model_path!r}, tp_size={tp_size}, "
+        f"moe_tp_size={moe_tp_size}, moe_ep_size={moe_ep_size}, "
+        f"attention_dp_size={attention_dp_size}"
+    )
+
+
 def resolve_backend_version(backend_name: str, backend_version: str | None) -> str:
     """Return the pinned backend version used for AIC perf lookups."""
     if backend_version is not None:
@@ -66,10 +84,23 @@ class AicSession:
     ):
         aic = _load_aiconfigurator()
         version = resolve_backend_version(backend_name, backend_version)
-
-        database = aic["get_database"](
-            system=system, backend=backend_name, version=version
+        context = _format_aic_context(
+            backend_name,
+            system,
+            version,
+            model_path,
+            tp_size,
+            moe_tp_size,
+            moe_ep_size,
+            attention_dp_size,
         )
+
+        try:
+            database = aic["get_database"](
+                system=system, backend=backend_name, version=version
+            )
+        except TypeError as exc:
+            raise RuntimeError(f"AIC perf database lookup failed for {context}") from exc
         if database is None:
             supported = (
                 aic["get_supported_databases"]().get(system, {}).get(backend_name, [])
@@ -81,24 +112,28 @@ class AicSession:
                 f"Supported versions for this system/backend: {supported_versions}"
             )
 
-        model_config = aic["config"].ModelConfig(
-            tp_size=tp_size,
-            moe_tp_size=moe_tp_size,
-            moe_ep_size=moe_ep_size,
-            attention_dp_size=attention_dp_size or 1,
-        )
-        model = aic["get_model"](
-            model_path=model_path,
-            model_config=model_config,
-            backend_name=backend_name,
-        )
-        backend = aic["get_backend"](backend_name)
-        self._session = aic["InferenceSession"](
-            model=model, database=database, backend=backend
-        )
+        try:
+            model_config = aic["config"].ModelConfig(
+                tp_size=tp_size,
+                moe_tp_size=moe_tp_size,
+                moe_ep_size=moe_ep_size,
+                attention_dp_size=attention_dp_size or 1,
+            )
+            model = aic["get_model"](
+                model_path=model_path,
+                model_config=model_config,
+                backend_name=backend_name,
+            )
+            backend = aic["get_backend"](backend_name)
+            self._session = aic["InferenceSession"](
+                model=model, database=database, backend=backend
+            )
+        except TypeError as exc:
+            raise RuntimeError(f"AIC perf model setup failed for {context}") from exc
         self._database = database
         self._model = model
         self._model_name = getattr(model, "model_name", None) or model_path
+        self._context = context
         logger.info(
             "AIC session initialized: backend=%s, system=%s, model=%s, tp=%d",
             backend_name,
@@ -106,6 +141,28 @@ class AicSession:
             model_path,
             tp_size,
         )
+
+    def _query_latency(self, op, phase: str, **kwargs) -> float:
+        op_name = getattr(op, "_name", type(op).__name__)
+        try:
+            result = op.query(self._database, **kwargs)
+        except TypeError as exc:
+            raise RuntimeError(
+                f"AIC perf model query failed for phase={phase!r}, "
+                f"op={op_name!r}, {self._context}"
+            ) from exc
+        if result is None:
+            raise RuntimeError(
+                f"AIC perf model query returned no latency for phase={phase!r}, "
+                f"op={op_name!r}, {self._context}"
+            )
+        try:
+            return float(result)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"AIC perf model query returned non-numeric latency "
+                f"{result!r} for phase={phase!r}, op={op_name!r}, {self._context}"
+            ) from exc
 
     def _predict_context_latency(
         self, batch_size: int, effective_isl: int, prefix: int
@@ -119,8 +176,9 @@ class AicSession:
         for op in self._model.context_ops:
             op_name = getattr(op, "_name", "")
             x = batch_size if "logits_gemm" in op_name else batch_size * effective_isl
-            result = op.query(
-                self._database,
+            total_latency += self._query_latency(
+                op,
+                "prefill",
                 x=x,
                 batch_size=batch_size,
                 beam_width=1,
@@ -129,7 +187,6 @@ class AicSession:
                 model_name=self._model_name,
                 seq_imbalance_correction_scale=1.0,
             )
-            total_latency += float(result)
 
         return total_latency
 
@@ -143,8 +200,9 @@ class AicSession:
         for step in range(0, osl - 1, DEFAULT_STATIC_STRIDE):
             step_latency = 0.0
             for op in self._model.generation_ops:
-                result = op.query(
-                    self._database,
+                step_latency += self._query_latency(
+                    op,
+                    "decode",
                     x=effective_batch_size,
                     batch_size=effective_batch_size,
                     beam_width=1,
@@ -152,7 +210,6 @@ class AicSession:
                     model_name=self._model_name,
                     gen_seq_imbalance_correction_scale=1.0,
                 )
-                step_latency += float(result)
 
             repeat_count = min(DEFAULT_STATIC_STRIDE, osl - 1 - step)
             total_latency += step_latency * repeat_count
