@@ -162,8 +162,8 @@ impl
                 // work: add NIXL-level cancellation that properly frees blocks.
                 let prefill_context = Context::with_id(prefill_req, request_id.clone());
 
-                // Pass the phase barrier to the spawned task. It is released after routing
-                // completes so worker recording finishes before phase changes to Decode.
+                // Pass the phase barrier to the spawned task. It is released after the first
+                // prefill output so bootstrap-side setup runs before phase changes to Decode.
                 self.spawn_prefill_task(prefill_context, Some(worker_id), prefill_phase_barrier);
 
                 Ok(PrefillOutcome::Bootstrap(bootstrap_info))
@@ -215,7 +215,7 @@ impl
 
                 // Set phase to Decode for the decode request.
                 // In bootstrap path, this blocks until the spawned prefill task releases its
-                // phase barrier after routing completes, ensuring correct worker attribution.
+                // phase barrier after the first prefill output.
                 if let Some(ref tracker) = req.tracker {
                     let _decode_permit = tracker.set_phase(RequestPhase::Decode).await;
                     // Permit is dropped immediately - decode proceeds, no need to hold it

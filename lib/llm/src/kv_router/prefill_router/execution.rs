@@ -120,9 +120,8 @@ impl PrefillRouter {
     ///
     /// Uses direct routing to target_worker when specified (for non-KV modes with bootstrap optimization).
     ///
-    /// If `phase_transition_permit` is provided, it is dropped immediately after routing completes,
-    /// allowing subsequent `set_phase` calls to proceed. This preserves the current synchronization:
-    /// the prefill route must finish worker recording before the phase can change to Decode.
+    /// If `phase_transition_permit` is provided, it is dropped after the first prefill output,
+    /// allowing subsequent `set_phase` calls to proceed once the prefill worker has started.
     ///
     /// Returns (PrefillResult, Option<(worker_id, dp_rank)>).
     pub(super) async fn execute_prefill(
@@ -145,10 +144,6 @@ impl PrefillRouter {
                 )
             })?;
 
-        // Release the phase barrier now that routing completed and worker recording already ran.
-        // Decode may proceed without waiting for prefill output streaming to finish.
-        drop(phase_transition_permit);
-
         let Some(first_output) = prefill_response.next().await else {
             return Err(PrefillError::PrefillError(
                 "Prefill router returned no output (stream ended)".to_string(),
@@ -156,8 +151,11 @@ impl PrefillRouter {
             ));
         };
 
+        // Release the phase barrier after the first prefill output confirms the worker
+        // started generation and any bootstrap-side setup has run.
+        drop(phase_transition_permit);
+
         // Record when prefill result arrived at the router (for KV transfer latency metric).
-        // This is after drop(phase_transition_permit) and after first_output is received.
         if let Some(ref tracker) = tracker {
             tracker.record_prefill_complete();
         }
@@ -225,8 +223,8 @@ impl PrefillRouter {
     ///
     /// Uses direct routing to target_worker when specified (for non-KV modes with bootstrap optimization).
     ///
-    /// The `phase_transition_permit` is passed to the spawned task and released after routing
-    /// completes, allowing the main task's `set_phase(Decode)` to proceed.
+    /// The `phase_transition_permit` is passed to the spawned task and released after the first
+    /// prefill output, allowing the main task's `set_phase(Decode)` to proceed.
     pub(super) fn spawn_prefill_task(
         &self,
         prefill_request: SingleIn<PreprocessedRequest>,

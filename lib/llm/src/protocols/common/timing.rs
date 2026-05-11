@@ -318,7 +318,7 @@ impl RequestTracker {
     ///
     /// The returned permit must be dropped to allow the next `set_phase` call to proceed.
     /// In the bootstrap optimization path, the permit is held and passed to the spawned
-    /// prefill task, ensuring routing completes before the phase changes.
+    /// prefill task, ensuring prefill starts before the phase changes.
     pub async fn set_phase(&self, phase: RequestPhase) -> OwnedSemaphorePermit {
         let permit = self
             .phase_semaphore
