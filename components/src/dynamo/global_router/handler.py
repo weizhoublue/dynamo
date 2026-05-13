@@ -160,7 +160,9 @@ class GlobalRouterHandler:
 
         # Extract TTFT target from extra_args if provided, fallback to CLI default
         extra_args = request.get("extra_args") or {}
-        ttft_target_ms = extra_args.get("ttft_target") or self.default_ttft_target_ms
+        ttft_target_ms = extra_args.get("ttft_target")
+        if ttft_target_ms is None:
+            ttft_target_ms = self.default_ttft_target_ms
 
         # Extract priority from routing hints (set by nvext.agent_hints.priority)
         routing = request.get("routing") or {}
@@ -210,7 +212,9 @@ class GlobalRouterHandler:
 
         # Extract ITL target from extra_args if provided, fallback to CLI default
         extra_args = request.get("extra_args") or {}
-        itl_target_ms = extra_args.get("itl_target") or self.default_itl_target_ms
+        itl_target_ms = extra_args.get("itl_target")
+        if itl_target_ms is None:
+            itl_target_ms = self.default_itl_target_ms
 
         # Extract priority from routing hints (set by nvext.agent_hints.priority)
         routing = request.get("routing") or {}
