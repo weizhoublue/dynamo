@@ -736,3 +736,16 @@ def test_build_sampling_params_maps_max_thinking_tokens():
     }
     sp = build_sampling_params(request, default_sampling_params={})
     assert sp.thinking_token_budget == 1024
+
+
+def test_build_sampling_params_openai_maps_max_thinking_tokens():
+    from dynamo.vllm.handlers import build_sampling_params_openai
+
+    request = {
+        "model": "test-model",
+        "prompt": "Solve: 1+1.",
+        "max_tokens": 32,
+        "nvext": {"max_thinking_tokens": 1024},
+    }
+    sp = build_sampling_params_openai(request, default_sampling_params={})
+    assert sp.thinking_token_budget == 1024
