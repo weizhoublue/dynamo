@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import dynamo.common.multimodal.video_loader as video_loader_module
-from dynamo.common.http.url_validator import UrlValidationPolicy
+from dynamo.common.http.url_validator import UrlValidationError, UrlValidationPolicy
 from dynamo.common.multimodal.video_loader import VideoLoader
 
 pytestmark = [
@@ -26,7 +26,7 @@ async def test_load_video_rejects_http_by_default():
     """
     loader = VideoLoader(url_policy=UrlValidationPolicy())
 
-    with pytest.raises(ValueError, match="not allowed"):
+    with pytest.raises(UrlValidationError, match="not allowed"):
         await loader.load_video("http://example.com/x.mp4")
 
 
@@ -74,6 +74,17 @@ async def test_load_video_batch_uses_url_loader():
     np.testing.assert_array_equal(videos[1][0], second[0])
     assert videos[0][1] == first[1]
     assert videos[1][1] == second[1]
+
+
+@pytest.mark.asyncio
+async def test_load_video_batch_preserves_url_validation_error():
+    loader = VideoLoader()
+    loader.load_video = AsyncMock(  # type: ignore[method-assign]
+        side_effect=UrlValidationError("IP literal is in a blocked range")
+    )
+
+    with pytest.raises(UrlValidationError, match="blocked range"):
+        await loader.load_video_batch([{"Url": "https://169.254.169.254/x.mp4"}])
 
 
 @pytest.mark.asyncio
