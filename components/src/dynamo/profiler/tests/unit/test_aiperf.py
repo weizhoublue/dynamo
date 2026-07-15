@@ -12,6 +12,7 @@ from dynamo.profiler.utils.aiperf import (
     _get_common_aiperf_cmd,
     benchmark_decode,
     benchmark_prefill,
+    get_prefill_ttft,
 )
 
 pytestmark = [
@@ -56,6 +57,35 @@ def test_benchmark_prefill_logs_stdout_and_stderr(caplog):
     assert result is None
     assert "stdout: request rejected" in caplog.text
     assert "stderr: profile failed" in caplog.text
+
+
+def test_get_prefill_ttft_returns_none_when_benchmark_fails():
+    with patch(
+        "dynamo.profiler.utils.aiperf.benchmark_prefill", return_value=None
+    ):
+        result = get_prefill_ttft(
+            100,
+            "artifacts",
+            "test-model",
+            "test-tokenizer",
+        )
+
+    assert result is None
+
+
+def test_get_prefill_ttft_dep_returns_none_when_benchmark_fails():
+    with patch(
+        "dynamo.profiler.utils.aiperf.benchmark_prefill", return_value=None
+    ):
+        result = get_prefill_ttft(
+            100,
+            "artifacts",
+            "test-model",
+            "test-tokenizer",
+            attention_dp_size=2,
+        )
+
+    assert result is None
 
 
 def test_benchmark_decode_logs_stdout_and_stderr(caplog):
