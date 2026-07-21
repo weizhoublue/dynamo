@@ -415,6 +415,8 @@ navigation:
                 path: ../pages-dev/components/frontend/frontend-guide.md
               - page: Configuration Reference
                 path: ../pages-dev/components/frontend/configuration.md
+              - page: Python Route Extensions
+                path: ../pages-dev/components/frontend/python-route-extensions.md
               - page: Tokenizer
                 path: ../pages-dev/components/frontend/Tokenizer.md
           - section: Router
@@ -422,6 +424,8 @@ navigation:
             contents:
               - page: Routing Concepts
                 path: ../pages-dev/components/router/router-concepts.md
+              - page: Multi-DC KV Routing and the DC Relay
+                path: ../pages-dev/components/router/multi-dc-kv-routing.md
               - page: Configuration and Tuning
                 path: ../pages-dev/components/router/router-configuration.md
               - page: Deficit Round Robin Queue Scheduling
@@ -622,6 +626,9 @@ navigation:
       - page: Browse All Recipes
         path: ../pages-dev/recipes/README.mdx
         slug: browse
+      - page: GLM-5.2
+        path: ../pages-dev/recipes/glm-5-2.mdx
+        slug: glm-5-2
       - page: Inkling NVFP4
         path: ../pages-dev/recipes/inkling.mdx
         slug: inkling
@@ -637,6 +644,12 @@ navigation:
       - page: GLM-5 NVFP4
         path: ../pages-dev/recipes/glm-5-nvfp4.mdx
         slug: glm-5-nvfp4
+      - page: DeepSeek-V4-Pro
+        path: ../pages-dev/recipes/deepseek-v4-pro.mdx
+        slug: deepseek-v4-pro
+      - page: DeepSeek-V4-Flash
+        path: ../pages-dev/recipes/deepseek-v4-flash.mdx
+        slug: deepseek-v4-flash
       - page: DeepSeek V3.2 NVFP4
         path: ../pages-dev/recipes/deepseek-v3-2-nvfp4.mdx
         slug: deepseek-v3-2-nvfp4
