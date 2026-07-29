@@ -21,12 +21,57 @@ pytest.importorskip("aiofiles")
 pytest.importorskip("kubernetes_asyncio")
 pytest.importorskip("httpx")
 
+from kubernetes_asyncio.client.rest import ApiException  # noqa: E402
+
 from deploy.utils.dynamo_deployment import (  # noqa: E402
     DeploymentFailedError,
     DynamoDeploymentClient,
+    cleanup_remaining_deployments,
 )
 
 pytestmark = pytest.mark.pre_merge
+
+
+async def test_delete_deployment_keeps_client_open_after_api_failure():
+    deployment_client = DynamoDeploymentClient(
+        namespace="ns", deployment_name="dgd-test"
+    )
+    deployment_client.deployment_name = "dgd-test"
+    deployment_client.custom_api = MagicMock()
+    deployment_client.custom_api.delete_namespaced_custom_object = AsyncMock(
+        side_effect=[ApiException(status=500), None]
+    )
+    k8s_client = MagicMock()
+    k8s_client.close = AsyncMock()
+    deployment_client.k8s_client = k8s_client
+
+    with pytest.raises(ApiException):
+        await deployment_client.delete_deployment()
+
+    k8s_client.close.assert_not_awaited()
+
+    await deployment_client.delete_deployment()
+
+    k8s_client.close.assert_awaited_once_with()
+    assert not hasattr(deployment_client, "k8s_client")
+
+
+async def test_final_cleanup_closes_client_after_delete_api_failure():
+    deployment_client = DynamoDeploymentClient(
+        namespace="ns", deployment_name="dgd-test"
+    )
+    deployment_client.custom_api = MagicMock()
+    deployment_client.custom_api.delete_namespaced_custom_object = AsyncMock(
+        side_effect=ApiException(status=500)
+    )
+    k8s_client = MagicMock()
+    k8s_client.close = AsyncMock()
+    deployment_client.k8s_client = k8s_client
+
+    await cleanup_remaining_deployments([deployment_client], namespace="ns")
+
+    k8s_client.close.assert_awaited_once_with()
+    assert not hasattr(deployment_client, "k8s_client")
 
 
 async def test_wait_for_deployment_ready_raises_deployment_failed_on_crashloop(
