@@ -355,7 +355,8 @@ class DecodeWorkerHandler(BaseWorkerHandler):
             RuntimeError: If no bootstrap info received from prefill worker.
         """
         logging.debug(f"New Request ID: {context.id()}")
-        _raise_if_conditional_disagg_bypass(request)
+        if self.serving_mode == DisaggregationMode.DECODE:
+            _raise_if_conditional_disagg_bypass(request)
         trace_id = context.trace_id
         sampling_params = self._build_sampling_params(request)
         input_param = self._get_input_param(request)
