@@ -749,11 +749,6 @@ async fn completions(
     // return a 503 if the service is not ready
     check_ready(&state)?;
 
-    // Validate stream_options is only used when streaming (NVBug 5662680)
-    validate_completion_stream_options(&request)?;
-
-    validate_completion_fields_generic(&request)?;
-
     // Detect batch prompts
     let batch_size = get_prompt_batch_size(&request.inner.prompt);
     let n = request.inner.n.unwrap_or(1);
@@ -800,6 +795,17 @@ async fn completions_single(
         streaming,
         &request_id,
     );
+
+    // Validate stream_options is only used when streaming (NVBug 5662680)
+    if let Err(err_response) = validate_completion_stream_options(&request) {
+        inflight_guard.mark_error(ErrorType::Validation);
+        return Err(err_response);
+    }
+
+    if let Err(err_response) = validate_completion_fields_generic(&request) {
+        inflight_guard.mark_error(ErrorType::Validation);
+        return Err(err_response);
+    }
 
     // Create http_queue_guard early - tracks time waiting to be processed
     let http_queue_guard = state.metrics_clone().create_http_queue_guard(&metric_model);
@@ -1069,6 +1075,17 @@ async fn completions_batch(
         streaming,
         &request_id,
     );
+
+    // Validate stream_options is only used when streaming (NVBug 5662680)
+    if let Err(err_response) = validate_completion_stream_options(&request) {
+        inflight_guard.mark_error(ErrorType::Validation);
+        return Err(err_response);
+    }
+
+    if let Err(err_response) = validate_completion_fields_generic(&request) {
+        inflight_guard.mark_error(ErrorType::Validation);
+        return Err(err_response);
+    }
 
     // Create http_queue_guard early - tracks time waiting to be processed
     let http_queue_guard = state.metrics_clone().create_http_queue_guard(&metric_model);

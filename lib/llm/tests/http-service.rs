@@ -1660,6 +1660,89 @@ async fn test_audio_speech_backend_invalid_argument_returns_4xx() {
     task.await.unwrap().unwrap();
 }
 
+/// Completion validation happens after dispatch, so both single and batch
+/// requests must create a guard before returning their OpenAI-compatible 400.
+#[tokio::test]
+async fn test_completions_validation_errors_are_metered() {
+    let (listener, port) = bind_random_port().await;
+    let service = HttpService::builder().port(port).build().unwrap();
+    service.enable_model_endpoint(dynamo_llm::endpoint_type::EndpointType::Completion, true);
+    let state = service.state_clone();
+    let manager = state.manager();
+
+    let token = CancellationToken::new();
+    let cancel_token = token.clone();
+    let task =
+        tokio::spawn(async move { service.run_with_listener(token.clone(), listener).await });
+    wait_for_service_ready(port).await;
+
+    let registry = Registry::new();
+    let card = ModelDeploymentCard::with_name_only("foo");
+    manager
+        .add_completions_model("foo", card.mdcsum(), Arc::new(AlwaysFailEngine {}))
+        .unwrap();
+
+    let metrics = state.metrics_clone();
+    metrics.register(&registry).unwrap();
+    let client = reqwest::Client::new();
+
+    for prompt in [
+        serde_json::json!("single prompt"),
+        serde_json::json!(["first prompt", "second prompt"]),
+    ] {
+        let response = client
+            .post(format!("http://localhost:{port}/v1/completions"))
+            .json(&serde_json::json!({
+                "model": "foo",
+                "prompt": prompt,
+                "stream_options": {"include_usage": true},
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+    compare_counter(
+        &metrics,
+        "foo",
+        &Endpoint::Completions,
+        &RequestType::Unary,
+        &Status::Error,
+        &ErrorType::Validation,
+        2,
+    );
+
+    for prompt in [
+        serde_json::json!("single prompt"),
+        serde_json::json!(["first prompt", "second prompt"]),
+    ] {
+        let response = client
+            .post(format!("http://localhost:{port}/v1/completions"))
+            .json(&serde_json::json!({
+                "model": "foo",
+                "prompt": prompt,
+                "stream": true,
+                "frequency_penalty": -3.0,
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+    compare_counter(
+        &metrics,
+        "foo",
+        &Endpoint::Completions,
+        &RequestType::Stream,
+        &Status::Error,
+        &ErrorType::Validation,
+        2,
+    );
+
+    cancel_token.cancel();
+    task.await.unwrap().unwrap();
+}
+
 /// Audio engine that completes normally but reports `status: "failed"`, the
 /// shape a worker uses to signal it could not produce audio.
 struct FailedStatusAudiosEngine {}
