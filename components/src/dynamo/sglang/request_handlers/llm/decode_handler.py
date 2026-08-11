@@ -44,8 +44,13 @@ _SAMPLING_OPTION_FIELDS = (
 BYPASS_REMOTE_PREFILL_ANNOTATION = "x-bypass-remote-prefill"
 
 
-def _raise_if_conditional_disagg_bypass(request: Dict[str, Any]) -> None:
-    if BYPASS_REMOTE_PREFILL_ANNOTATION not in (request.get("annotations") or []):
+def _raise_if_conditional_disagg_bypass(
+    serving_mode: DisaggregationMode, request: Dict[str, Any]
+) -> None:
+    if (
+        serving_mode != DisaggregationMode.DECODE
+        or BYPASS_REMOTE_PREFILL_ANNOTATION not in (request.get("annotations") or [])
+    ):
         return
     raise HttpError(
         400,
@@ -355,7 +360,7 @@ class DecodeWorkerHandler(BaseWorkerHandler):
             RuntimeError: If no bootstrap info received from prefill worker.
         """
         logging.debug(f"New Request ID: {context.id()}")
-        _raise_if_conditional_disagg_bypass(request)
+        _raise_if_conditional_disagg_bypass(self.serving_mode, request)
         trace_id = context.trace_id
         sampling_params = self._build_sampling_params(request)
         input_param = self._get_input_param(request)

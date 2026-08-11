@@ -6,13 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 
+from dynamo.common.constants import DisaggregationMode
 from dynamo.common.metadata_upload import MetadataUploader
 from dynamo.llm import HttpError
 from dynamo.sglang.request_handlers.llm.decode_handler import (
+    BYPASS_REMOTE_PREFILL_ANNOTATION,
     DecodeWorkerHandler,
     _extract_sglang_stop_reason,
     _nvext_extra_field_requested,
     _openai_stop_sampling_params,
+    _raise_if_conditional_disagg_bypass,
     _user_stop_token_ids,
 )
 from dynamo.sglang.request_handlers.llm.mm_disagg_utils import (
@@ -30,6 +33,27 @@ pytestmark = [
     pytest.mark.profiled_vram_gib(0),
     pytest.mark.pre_merge,
 ]
+
+
+@pytest.mark.parametrize(
+    ("serving_mode", "annotations", "raises"),
+    [
+        (DisaggregationMode.AGGREGATED, [BYPASS_REMOTE_PREFILL_ANNOTATION], False),
+        (DisaggregationMode.DECODE, [], False),
+        (DisaggregationMode.DECODE, [BYPASS_REMOTE_PREFILL_ANNOTATION], True),
+    ],
+)
+def test_conditional_disagg_bypass_is_rejected_only_for_decode(
+    serving_mode, annotations, raises
+):
+    request = {"annotations": annotations}
+
+    if raises:
+        with pytest.raises(HttpError) as error:
+            _raise_if_conditional_disagg_bypass(serving_mode, request)
+        assert error.value.code == 400
+    else:
+        _raise_if_conditional_disagg_bypass(serving_mode, request)
 
 
 def _read_zstd_payload(path):
